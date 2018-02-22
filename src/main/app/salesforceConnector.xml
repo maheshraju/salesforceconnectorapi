@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata"
+	xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/apikit" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/apikit http://www.mulesoft.org/schema/mule/apikit/current/mule-apikit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd">
+	
+	<flow name="salesforceConnector-main">
+		<http:listener config-ref="salesforceConnector-httpListenerConfig"
+			path="${PATH}" doc:name="HTTP" />
+		<apikit:router config-ref="salesforceConnector-config"
+			doc:name="APIkit Router" />
+		<exception-strategy ref="salesforceConnector-apiKitGlobalExceptionMapping"
+			doc:name="Reference Exception Strategy" />
+	</flow>
+	<flow name="salesforceConnector-console">
+		<http:listener config-ref="salesforceConnector-httpListenerConfig"
+			path="/console/*" doc:name="HTTP" />
+		<apikit:console config-ref="salesforceConnector-config"
+			doc:name="APIkit Console" />
+	</flow>
+	<flow name="get:/getAllAccounts:salesforceConnector-config">
+        <logger message="Into #[flow.name]" level="INFO" doc:name="Logger"/>
+		<sfdc:query config-ref="Salesforce__Basic_Authentication"
+			query="${SF_QUERY_GET_ALL}"
+			doc:name="Salesforce" />
+        <logger message="Retrieved Records from Salesforce" level="INFO" doc:name="Logger"/>
+		<dw:transform-message doc:name="Transform Message"
+			metadata:id="5f4c67cb-6d5a-4775-a66a-5e788c4e7313">
+			<dw:set-payload><![CDATA[%dw 1.0
+ %input payload application/java
+ %output application/csv
+---
+payload
+]]></dw:set-payload>
+		</dw:transform-message>
+		<file:outbound-endpoint connector-ref="File"
+			responseTimeout="${FILE_RESPONSE_TIMEOUT}" doc:name="File" 			
+			path="${FILE_PATH}" outputPattern="${FILE_ALL}"/>
+
+	</flow>
+	<flow name="get:/getAccountByName:salesforceConnector-config">
+        <logger message="Into #[flow.name]" level="INFO" doc:name="Logger"/>
+        <set-property propertyName="name" value="#[message.inboundProperties.'http.query.params'.name]" doc:name="Property"/>
+		<sfdc:query config-ref="Salesforce__Basic_Authentication"
+			query="dsql:SELECT AccountNumber,AccountSource,Active__c,AnnualRevenue,BillingCity,BillingCountry,BillingGeocodeAccuracy,BillingLatitude,BillingLongitude,BillingPostalCode,BillingState,BillingStreet,CleanStatus,CreatedById,CreatedDate,CustomerPriority__c,DandbCompanyId,Description,DunsNumber,Fax,Id,Industry,IsDeleted,Jigsaw,JigsawCompanyId,LastActivityDate,LastModifiedById,LastModifiedDate,LastReferencedDate,LastViewedDate,MasterRecordId,NaicsCode,NaicsDesc,Name,NumberOfEmployees,NumberofLocations__c,OwnerId,Ownership,ParentId,Phone,PhotoUrl,Rating,SLAExpirationDate__c,SLASerialNumber__c,SLA__c,ShippingCity,ShippingCountry,ShippingGeocodeAccuracy,ShippingLatitude,ShippingLongitude,ShippingPostalCode,ShippingState,ShippingStreet,Sic,SicDesc,Site,SystemModstamp,TickerSymbol,Tradestyle,Type,UpsellOpportunity__c,Website,YearStarted FROM Account WHERE Name = '#[message.outboundProperties.name]'"
+			doc:name="Salesforce" />
+        <logger message="Retrieved Records from Salesforce" level="INFO" doc:name="Logger"/>
+		<dw:transform-message doc:name="Transform Message"
+			metadata:id="bdf5bbc3-a71d-4af6-bf7b-e362c59ea6da">
+			<dw:set-payload><![CDATA[%dw 1.0
+ %input payload application/java
+ %output application/csv
+---
+payload]]></dw:set-payload>
+		</dw:transform-message>
+        <remove-property propertyName="name" doc:name="Property"/>
+		<file:outbound-endpoint
+			path="${FILE_PATH}"			
+			responseTimeout="${FILE_RESPONSE_TIMEOUT}" doc:name="File" outputPattern="${FILE_BY_NAME}" connector-ref="File"/>
+
+	</flow>
+    <choice-exception-strategy name="salesforceConnectorChoice_Exception_Strategy">
+        <catch-exception-strategy doc:name="Salesforce Connection Exception" when="org.mule.api.ConnectionEcxeption">
+            <logger message="Connection to Salesforce Failed due to Connection Exception,  Check the Salesforce credentials - EXCEPTION MESSAGE: #[exception.cause.message]  EXCEPTION CAUSE: #[exception.causedBy]" level="ERROR" doc:name="Logger"/>
+            <set-property propertyName="http.status" value="#[500]" doc:name="Property"/>
+            <set-payload value="Connection to Salesforce Failed" doc:name="Connection Exception"/>
+        </catch-exception-strategy>
+        <catch-exception-strategy doc:name="Default Exception">
+            <logger message="Default Exception - An unhandled Exception is caught - EXCEPTION MESSAGE: #[exception.cause.message]  EXCEPTION CAUSE: #[exception.causedBy]" level="ERROR" doc:name="Logger"/>
+            <set-property propertyName="http.status" value="#[500]" doc:name="HTTP 500"/>
+            <set-payload value="Internal Server Error" mimeType="text/plain" doc:name="Internal Server Error"/>
+        </catch-exception-strategy>
+    </choice-exception-strategy>
+	<apikit:mapping-exception-strategy
+		name="salesforceConnector-apiKitGlobalExceptionMapping">
+		<apikit:mapping statusCode="${NOT_FOUND}">
+			<apikit:exception
+				value="org.mule.module.apikit.exception.NotFoundException" />
+			<set-property propertyName="Content-Type" value="application/json"
+				doc:name="Property" />
+			<set-payload
+				value="{ &quot;message&quot;: &quot;Resource not found&quot; }"
+				doc:name="Set Payload" />
+		</apikit:mapping>
+		<apikit:mapping statusCode="${METHOD_NOT_ALLOWED}">
+			<apikit:exception
+				value="org.mule.module.apikit.exception.MethodNotAllowedException" />
+			<set-property propertyName="Content-Type" value="application/json"
+				doc:name="Property" />
+			<set-payload
+				value="{ &quot;message&quot;: &quot;Method not allowed&quot; }"
+				doc:name="Set Payload" />
+		</apikit:mapping>
+		<apikit:mapping statusCode="${UNSUPPORTED_MEDIA_TYPE}">
+			<apikit:exception
+				value="org.mule.module.apikit.exception.UnsupportedMediaTypeException" />
+			<set-property propertyName="Content-Type" value="application/json"
+				doc:name="Property" />
+			<set-payload
+				value="{ &quot;message&quot;: &quot;Unsupported media type&quot; }"
+				doc:name="Set Payload" />
+		</apikit:mapping>
+		<apikit:mapping statusCode="${NOT_ACCEPTABLE}">
+			<apikit:exception
+				value="org.mule.module.apikit.exception.NotAcceptableException" />
+			<set-property propertyName="Content-Type" value="application/json"
+				doc:name="Property" />
+			<set-payload value="{ &quot;message&quot;: &quot;Not acceptable&quot; }"
+				doc:name="Set Payload" />
+		</apikit:mapping>
+		<apikit:mapping statusCode="${BAD_REQUEST}">
+			<apikit:exception
+				value="org.mule.module.apikit.exception.BadRequestException" />
+			<set-property propertyName="Content-Type" value="application/json"
+				doc:name="Property" />
+			<set-payload value="{ &quot;message&quot;: &quot;Bad request&quot; }"
+				doc:name="Set Payload" />
+		</apikit:mapping>
+	</apikit:mapping-exception-strategy>
+</mule>

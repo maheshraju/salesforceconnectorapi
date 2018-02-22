@@ -1,0 +1,33 @@
+#%RAML 0.8
+  title: SalesforceConnector API
+  version: 1.0
+  baseUri: hrrp://localhost:8080/salesforce
+
+  /getAllAccounts:
+    get:
+        description: This API retrieves all Salesforce accounts
+        responses: 
+              200:
+                  body:
+                      text/plain:
+                          example: All the account details have been successfully loaded into sfAll.csv
+                           
+              
+  /getAccountByName:
+    get: 
+        description: This API retrieves all Salesforce accounts by a given Name
+        queryParameters: 
+          name:
+            type: string
+            required: true
+        
+        responses: 
+              200:
+                  body:
+                      text/plain:
+                          example: All the account details have been successfully loaded into sfByName.csv
+                          
+              
+        
+
+        
